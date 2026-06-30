@@ -1,0 +1,10 @@
+{
+  "name": "hwagye26-lt",
+  "version": "1.0.0",
+  "private": true,
+  "description": "26화계LT - 팀 대항 파티 게임 (게임 올림픽)",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  }
+}

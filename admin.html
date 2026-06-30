@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>26화계LT — 관제센터 (TV)</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+</head>
+<body class="admin">
+  <header class="a-header">
+    <h1>🏟️ 26화계<span>LT</span></h1>
+    <button class="ghost small" id="nav-lobby">👥 로비/팀</button>
+    <button class="ghost small" id="nav-games">🎮 게임 선택</button>
+    <button class="ghost small" id="nav-awards">🏅 시상식</button>
+    <div class="spacer"></div>
+    <label>AI 모델
+      <select id="model-sel">
+        <option value="haiku">Haiku (빠름)</option>
+        <option value="sonnet">Sonnet (정밀)</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="voice-toggle" checked> 🔊 음성</label>
+    <button class="ghost small" id="btn-settings">⚙️</button>
+  </header>
+
+  <div class="a-layout">
+    <aside id="scoreboard"></aside>
+    <section id="stage"></section>
+  </div>
+
+  <div id="overlay" hidden></div>
+
+  <script src="js/common.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>
