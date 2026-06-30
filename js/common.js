@@ -70,28 +70,38 @@ function currentModel() {
 async function claudeCall({ system, messages, max_tokens = 1024 }) {
   const body = { model: currentModel(), system, messages, max_tokens };
 
-  // 1) 서버리스 프록시
+  // 1) 서버리스 프록시 (/api/claude)
+  // 핵심: 서버리스가 JSON 에러를 돌려주면(예: ANTHROPIC_API_KEY 미설정 → 500) 그 에러를
+  // 그대로 노출한다. 폴백은 "서버리스 자체가 없는 경우"(정적 서빙 → 비-JSON 404)에만 한다.
   try {
     const r = await fetch('/api/claude', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    if (r.ok) {
+    const ct = r.headers.get('content-type') || '';
+    if (ct.includes('application/json')) {
       const j = await r.json();
-      if (j.content) return j;
-    } else if (r.status !== 404 && r.status !== 405 && r.status !== 500) {
-      const j = await r.json().catch(() => ({}));
-      throw new Error('Claude API 오류: ' + (j.error?.message || j.error || r.status));
+      if (r.ok && j.content) return j;
+      // 서버리스가 응답했지만 에러 → 진짜 원인을 노출 (폴백하지 않음)
+      const msg = j.error?.message || j.error || ('HTTP ' + r.status);
+      console.error('[claudeCall] /api/claude 오류:', r.status, j);
+      throw new Error('Claude API 오류: ' + msg);
     }
+    // 비-JSON 응답(정적 호스팅의 404 등) → 서버리스 미배포로 간주, 로컬 키 폴백
+    console.warn('[claudeCall] /api/claude 비-JSON 응답(' + r.status + ') → 로컬 키 폴백 시도');
   } catch (e) {
-    if (String(e).includes('Claude API 오류')) throw e;
-    // 서버리스 없음(정적 서빙) → 폴백 진행
+    if (String(e.message || e).includes('Claude API 오류')) throw e; // 서버리스 에러는 전파
+    console.warn('[claudeCall] /api/claude 요청 실패 → 로컬 키 폴백:', e);
   }
 
-  // 2) 로컬 개발 폴백 (관리자 설정에서 키 입력 시)
+  // 2) 로컬 개발 폴백 (관리자 설정 ⚙️에서 키 입력 시에만)
   const key = localStorage.getItem('hw_anthropic_key');
-  if (!key) throw new Error('NO_API: /api/claude 사용 불가, 로컬 API 키도 없음. Vercel 배포 또는 설정에서 키 입력 필요');
+  if (!key) {
+    const err = 'API 키 없음 — Vercel 환경변수 ANTHROPIC_API_KEY가 설정되지 않았거나 /api/claude가 배포되지 않았습니다. (로컬 테스트는 ⚙️ 설정에서 키 입력)';
+    console.error('[claudeCall]', err);
+    throw new Error(err);
+  }
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -103,7 +113,10 @@ async function claudeCall({ system, messages, max_tokens = 1024 }) {
     body: JSON.stringify(body)
   });
   const j = await r.json();
-  if (!r.ok) throw new Error('Claude API 오류: ' + (j.error?.message || JSON.stringify(j)));
+  if (!r.ok) {
+    console.error('[claudeCall] 직접 호출 오류:', r.status, j);
+    throw new Error('Claude API 오류: ' + (j.error?.message || JSON.stringify(j)));
+  }
   return j;
 }
 
@@ -146,11 +159,18 @@ function say(text, rate = 1.05) {
   } catch (e) {}
 }
 
+// Gemini TTS 사용 여부. Web Speech와 동시 재생되는 문제로 현재 비활성화 (Web Speech만 사용).
+// true 로 바꾸면 다시 Gemini TTS를 사용한다.
+const USE_GEMINI_TTS = false;
+
 // 임팩트용 — 미리 생성해두고 재생 함수를 돌려줌 (두구두구 연출 중 생성)
 // 사용법: const play = await ttsMake('레드팀 547점!'); ... play();
 async function ttsMake(text, style) {
   const fallback = () => say(text);
   if (!text) return () => {};
+
+  // Gemini TTS 비활성화 시 Web Speech로만 재생 (동시 재생 방지)
+  if (!USE_GEMINI_TTS) return fallback;
 
   // 1) 서버리스 프록시
   try {

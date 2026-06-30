@@ -135,6 +135,29 @@ body.player #app {
   box-shadow: 0 8px 40px rgba(0,0,0,.5);
   margin: 0 auto;
 }
+/* 색상 수사대 원형 라이브 카메라 */
+.cam-circle {
+  width: 260px; height: 260px;
+  max-width: 80vw; aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  overflow: hidden;
+  position: relative;
+  margin: 6px auto;
+  background: #000;
+  box-shadow: 0 8px 40px rgba(0,0,0,.55);
+}
+.cam-circle video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cam-reticle {
+  position: absolute; left: 50%; top: 50%;
+  width: 54px; height: 54px;
+  transform: translate(-50%, -50%);
+  border: 2px solid rgba(255,255,255,.85);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.cam-reticle::before, .cam-reticle::after { content: ''; position: absolute; background: rgba(255,255,255,.85); }
+.cam-reticle::before { left: 50%; top: -10px; width: 2px; height: 12px; transform: translateX(-50%); }
+.cam-reticle::after  { top: 50%; left: -10px; height: 2px; width: 12px; transform: translateY(-50%); }
 .cam-btn {
   display: inline-flex;
   align-items: center;

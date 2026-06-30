@@ -133,6 +133,7 @@ function render() {
              me.p.team, me.p.skipped, JSON.stringify(Object.keys(RES)), JSON.stringify(Object.keys(RELRES))].join('|');
   if (k === renderKey) return;
   renderKey = k;
+  stopColorCam(); // 화면 전환 시 라이브 카메라 정리 (필요하면 색상 play 화면이 다시 켬)
 
   const theme = { color: 'theme-color', shake: 'theme-shake', relay: 'theme-relay', ox: 'theme-ox', awards: 'theme-awards' }[G.type] || '';
   document.body.className = 'player ' + theme;
@@ -184,12 +185,17 @@ function rColor(pm) {
     }
     pm.innerHTML = `
       <h2>🚔 용의 색상 수배 중</h2>
-      <div class="color-swatch" style="background:${esc(d.target)}"></div>
-      <div class="muted">${esc(d.target)} — 비슷한 색 물건을 찾아 촬영하세요!</div>
+      <div class="muted">목표 색 <b style="color:${esc(d.target)}">${esc(d.target)}</b> — 원형 조준경 안에 색을 맞추고 촬영! (가운데 원만 판별됩니다)</div>
+      <div class="cam-circle" id="cam-circle" style="border:6px solid ${esc(d.target)}">
+        <video id="cam-video" autoplay playsinline muted></video>
+        <div class="cam-reticle"></div>
+      </div>
       <div class="big-timer" data-dl="${d.endsAt}">60</div>
-      ${camHTML('증거물 촬영')}`;
-    bindCam(async img => {
-      await db.ref(`sub/${G.sid}/${G.round}/${me.id}`).set({ img, at: now() });
+      <button id="cam-shot" disabled>📷 조준경 색 촬영</button>
+      <div class="muted" id="cam-status">카메라 준비 중...</div>`;
+    startColorCam(d.target, async (img, avg) => {
+      const st = $('#cam-status'); if (st) st.textContent = '📤 전송 중...';
+      await db.ref(`sub/${G.sid}/${G.round}/${me.id}`).set({ img, avg: avg || null, at: now() });
       flags[fkey] = true; renderKey = ''; render();
     });
     return;
@@ -411,6 +417,96 @@ function rAwards(pm) {
         <div style="font-size:22px;font-weight:900;color:var(--accent)">🏆 ${esc(a.title)}</div>
         <div class="muted">${esc(a.reason || '')}</div></div>`).join('')
       : '<div class="muted">TV 화면을 주목하세요!</div>'}`;
+}
+
+/* ---------------- 색상 수사대: 원형 라이브 카메라 ---------------- */
+let colorStream = null;
+function stopColorCam() {
+  if (colorStream) {
+    try { colorStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    colorStream = null;
+  }
+}
+
+async function startColorCam(targetHex, onCapture) {
+  const video = $('#cam-video');
+  const btn = $('#cam-shot');
+  const st = $('#cam-status');
+  if (!video || !btn) return;
+
+  // 라이브 카메라 불가 시 기존 파일 촬영으로 대체
+  const useFileFallback = msg => {
+    const circle = $('#cam-circle');
+    if (circle) circle.innerHTML = `<div style="color:#fff;font-size:13px;padding:18px;text-align:center;line-height:1.5">${esc(msg || '카메라를 열 수 없어요')}<br>아래 버튼으로 촬영하세요</div>`;
+    btn.outerHTML = `<label class="cam-btn" style="display:inline-flex">📷 증거물 촬영<input id="cam" type="file" accept="image/*" capture="environment" hidden></label>`;
+    bindCam(async img => onCapture(img, null));
+  };
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    return useFileFallback('이 브라우저는 라이브 카메라를 지원하지 않아요');
+  }
+  try {
+    stopColorCam();
+    colorStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 1280 } },
+      audio: false
+    });
+    video.srcObject = colorStream;
+    await video.play().catch(() => {});
+    btn.disabled = false;
+    if (st) st.textContent = '원형 조준경을 목표 색 물건에 맞추고 촬영하세요';
+    btn.onclick = () => {
+      const res = captureColorCircle(video);
+      if (!res) { if (st) st.textContent = '촬영 실패 — 다시 시도하세요'; return; }
+      btn.disabled = true;
+      stopColorCam();
+      onCapture(res.img, res.avg);
+    };
+  } catch (e) {
+    console.error('[color cam] getUserMedia 실패', e);
+    stopColorCam();
+    useFileFallback('카메라 권한이 거부되었거나 사용 중이에요 (' + (e.name || e.message || '') + ')');
+  }
+}
+
+// 비디오 중앙 원형 영역을 크롭 + 평균색 계산 → 원형 JPEG dataURL
+function captureColorCircle(video) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return null;
+  const side = Math.min(vw, vh) * 0.7;          // 조준경 지름에 해당하는 원본 영역
+  const sx = (vw - side) / 2, sy = (vh - side) / 2;
+  const out = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = out;
+  const ctx = cv.getContext('2d');
+  const cx = out / 2, cy = out / 2, rad = out / 2;
+
+  // 1) 중앙 영역을 그려 원 안쪽 픽셀의 평균색 계산
+  ctx.drawImage(video, sx, sy, side, side, 0, 0, out, out);
+  const data = ctx.getImageData(0, 0, out, out).data;
+  let r = 0, g = 0, b = 0, c = 0;
+  for (let y = 0; y < out; y++) {
+    for (let x = 0; x < out; x++) {
+      const dx = x - cx, dy = y - cy;
+      if (dx * dx + dy * dy <= rad * rad) {
+        const i = (y * out + x) * 4;
+        r += data[i]; g += data[i + 1]; b += data[i + 2]; c++;
+      }
+    }
+  }
+  r = Math.round(r / c); g = Math.round(g / c); b = Math.round(b / c);
+  const hex = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+
+  // 2) 원 바깥은 평균색으로 채우고 원 안에만 실제 영상 → 원형 사진 완성
+  ctx.fillStyle = hex;
+  ctx.fillRect(0, 0, out, out);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.drawImage(video, sx, sy, side, side, 0, 0, out, out);
+  ctx.restore();
+  return { img: cv.toDataURL('image/jpeg', 0.85), avg: hex };
 }
 
 /* ---------------- 헬퍼 ---------------- */

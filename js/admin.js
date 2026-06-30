@@ -364,20 +364,23 @@ async function colorJudge() {
       try {
         const resp = await claudeCall({
           system: `너는 파티게임 '긴급 출동! 색상 수사대'의 AI 감식반장이다. 목표 색상(HEX)과 플레이어가 제출한 사진을 비교한다.
-사진 속에서 목표 색과 가장 비슷한 물체를 찾아 색상 유사도(색조·채도·명도 종합)를 0~1000점으로 채점하라.
-거의 같은 색이면 900+, 비슷한 계열이면 500~800, 동떨어지면 300 이하.
+제출 사진은 플레이어가 화면 중앙 원형 조준경으로 특정 지점을 클로즈업해 크롭한 원형 이미지다(바깥은 해당 영역 평균색으로 채워져 있음). 이 원형 영역의 대표 색을 목표 색과 비교해 채점하라.
+색상 유사도(색조·채도·명도 종합)를 0~1000점으로 채점: 거의 같은 색이면 900+, 비슷한 계열이면 500~800, 동떨어지면 300 이하.
 comment는 형사/무전기 말투의 위트있는 한 줄 (존댓말, 예: "이게 민트색이라고요...? 용감하네요.").
-JSON만 출력: {"score": 정수, "found": "사진에서 찾은 물체(짧게)", "comment": "한 줄"}`,
+JSON만 출력: {"score": 정수, "found": "조준한 색/물체(짧게)", "comment": "한 줄"}`,
           messages: [{ role: 'user', content: [
-            { type: 'text', text: `목표 색상: ${d.target}` },
+            { type: 'text', text: `목표 색상: ${d.target}${sub.avg ? `\n참고: 클라이언트가 계산한 조준 영역 평균색은 ${sub.avg}` : ''}` },
             imgBlock(sub.img)
           ]}],
           max_tokens: 300
         });
         const j = parseJSON(claudeText(resp));
-        result = { score: Math.max(0, Math.min(1000, Math.round(j.score))), found: j.found || '', comment: j.comment || '' };
+        const sc = Math.round(Number(j.score));
+        if (!Number.isFinite(sc)) throw new Error('점수 파싱 실패: ' + claudeText(resp).slice(0, 80));
+        result = { score: Math.max(0, Math.min(1000, sc)), found: j.found || '', comment: j.comment || '' };
       } catch (e) {
-        result = { score: 500, comment: '감식 장비 오류로 중간 점수 처리 (' + String(e).slice(0, 40) + ')' };
+        console.error('[colorJudge] 채점 실패:', p.name, e);
+        result = { score: 0, error: true, comment: '⚠️ 채점 실패 — ' + String(e.message || e).slice(0, 80) };
       }
     }
     await db.ref(`res/${G.sid}/${round}/${id}`).set(result);
@@ -447,10 +450,10 @@ function aColor() {
         <b style="font-size:22px">${esc(tName(t))}</b><span class="muted">팀 평균</span>
         <span class="trs">+${avg[t] || 0}</span></div>`).join('')}
       <div class="result-grid">
-        ${all.map(x => `<div class="card result-card ${x === worst && all.length > 1 ? 'worst' : ''}">
+        ${all.map(x => `<div class="card result-card ${x.res.error ? 'worst' : (x === worst && all.length > 1 ? 'worst' : '')}">
           ${subs[x.id] ? `<img src="${subs[x.id].img}">` : '<div style="height:120px;display:flex;align-items:center;justify-content:center">📵</div>'}
           <div style="font-weight:800">${esc(x.p.name)}</div>
-          <div class="rs">${x.res.score}</div>
+          <div class="rs">${x.res.error ? '⚠️' : x.res.score}</div>
           <div class="rc">"${esc(x.res.comment || '')}"</div></div>`).join('')}
       </div>
       <div style="display:flex;gap:10px;margin-top:16px">
@@ -703,15 +706,18 @@ JSON만: {"sim": 정수0~1000, "correct": true/false, "comment": "한 줄"}`,
           max_tokens: 300
         });
         j = parseJSON(claudeText(resp));
+        if (!Number.isFinite(Number(j.sim))) throw new Error('감정 결과 파싱 실패: ' + claudeText(resp).slice(0, 80));
       } catch (e) {
-        j = { sim: 500, correct: false, comment: '감정 장비 고장으로 중간가 책정 (' + String(e).slice(0, 40) + ')' };
+        console.error('[relayJudge] 감정 실패:', tName(tid), e);
+        j = { sim: 0, correct: false, error: true, comment: '⚠️ 감정 실패 — ' + String(e.message || e).slice(0, 80) };
       }
     }
-    // 유사도 70% + 정답 보너스 30% → 릴레이 단계 수 비율 보정
-    const raw = Math.round(j.sim * 0.7 + (j.correct ? 300 : 0));
+    // 유사도 70% + 정답 보너스 30% → 릴레이 단계 수 비율 보정 (실패/무출품 시 0점)
+    const sim = Math.max(0, Math.min(1000, Number(j.sim) || 0));
+    const raw = Math.round(sim * 0.7 + (j.correct ? 300 : 0));
     const finalScore = Math.min(1000, Math.round(raw * (drawCounts[tid] / minDraw)));
     await db.ref(`relayRes/${G.sid}/${tid}`).set({
-      prompt: r.prompt, sim: j.sim, correct: !!j.correct, comment: j.comment || '',
+      prompt: r.prompt, sim, correct: !!j.correct, comment: j.comment || '', error: !!j.error,
       raw, finalScore, drawSteps: drawCounts[tid], minDraw, finalIdx, guess: r.guess || ''
     });
     const guesser = r.order[r.order.length - 1];
