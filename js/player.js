@@ -188,7 +188,7 @@ function rColor(pm) {
       <div class="muted">목표 색 <b style="color:${esc(d.target)}">${esc(d.target)}</b> — 원형 조준경 안에 색을 맞추고 촬영! (가운데 원만 판별됩니다)</div>
       <div class="cam-circle" id="cam-circle" style="border:6px solid ${esc(d.target)}">
         <video id="cam-video" autoplay playsinline muted></video>
-        <div class="cam-reticle"></div>
+        <div class="cam-aim"></div>
       </div>
       <div class="big-timer" data-dl="${d.endsAt}">60</div>
       <button id="cam-shot" disabled>📷 조준경 색 촬영</button>
@@ -439,7 +439,12 @@ async function startColorCam(targetHex, onCapture) {
     const circle = $('#cam-circle');
     if (circle) circle.innerHTML = `<div style="color:#fff;font-size:13px;padding:18px;text-align:center;line-height:1.5">${esc(msg || '카메라를 열 수 없어요')}<br>아래 버튼으로 촬영하세요</div>`;
     btn.outerHTML = `<label class="cam-btn" style="display:inline-flex">📷 증거물 촬영<input id="cam" type="file" accept="image/*" capture="environment" hidden></label>`;
-    bindCam(async img => onCapture(img, null));
+    // 파일 촬영도 사진 중앙 원형 영역만 잘라 제출 (동그라미만 판별 유지)
+    bindCam(async fullUrl => {
+      let res = null;
+      try { res = captureCircle(await loadImage(fullUrl)); } catch (e) { console.error('[color cam] 폴백 크롭 실패', e); }
+      onCapture(res ? res.img : fullUrl, res ? res.avg : null);
+    });
   };
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -456,7 +461,7 @@ async function startColorCam(targetHex, onCapture) {
     btn.disabled = false;
     if (st) st.textContent = '원형 조준경을 목표 색 물건에 맞추고 촬영하세요';
     btn.onclick = () => {
-      const res = captureColorCircle(video);
+      const res = captureCircle(video);
       if (!res) { if (st) st.textContent = '촬영 실패 — 다시 시도하세요'; return; }
       btn.disabled = true;
       stopColorCam();
@@ -469,11 +474,20 @@ async function startColorCam(targetHex, onCapture) {
   }
 }
 
-// 비디오 중앙 원형 영역을 크롭 + 평균색 계산 → 원형 JPEG dataURL
-function captureColorCircle(video) {
-  const vw = video.videoWidth, vh = video.videoHeight;
+// 이미지/비디오 로더
+function loadImage(srcUrl) {
+  return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = srcUrl; });
+}
+
+// 조준 원 지름 / 뷰포트(=object-fit:cover 중앙 정사각) 비율. CSS .cam-aim 의 50%와 일치시킴.
+const AIM = 0.5;
+
+// 소스(video/image)의 중앙 원형(AIM) 영역만 크롭 + 평균색 계산 → 원형 JPEG dataURL
+function captureCircle(src, cap = AIM) {
+  const vw = src.videoWidth || src.naturalWidth || src.width;
+  const vh = src.videoHeight || src.naturalHeight || src.height;
   if (!vw || !vh) return null;
-  const side = Math.min(vw, vh) * 0.7;          // 조준경 지름에 해당하는 원본 영역
+  const side = Math.min(vw, vh) * cap;          // 조준 원에 해당하는 원본 영역 (미리보기 원과 일치)
   const sx = (vw - side) / 2, sy = (vh - side) / 2;
   const out = 256;
   const cv = document.createElement('canvas');
@@ -482,7 +496,7 @@ function captureColorCircle(video) {
   const cx = out / 2, cy = out / 2, rad = out / 2;
 
   // 1) 중앙 영역을 그려 원 안쪽 픽셀의 평균색 계산
-  ctx.drawImage(video, sx, sy, side, side, 0, 0, out, out);
+  ctx.drawImage(src, sx, sy, side, side, 0, 0, out, out);
   const data = ctx.getImageData(0, 0, out, out).data;
   let r = 0, g = 0, b = 0, c = 0;
   for (let y = 0; y < out; y++) {
@@ -504,7 +518,7 @@ function captureColorCircle(video) {
   ctx.beginPath();
   ctx.arc(cx, cy, rad, 0, Math.PI * 2);
   ctx.clip();
-  ctx.drawImage(video, sx, sy, side, side, 0, 0, out, out);
+  ctx.drawImage(src, sx, sy, side, side, 0, 0, out, out);
   ctx.restore();
   return { img: cv.toDataURL('image/jpeg', 0.85), avg: hex };
 }

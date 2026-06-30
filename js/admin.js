@@ -134,10 +134,10 @@ function rLobby() {
   const playerURL = location.href.substring(0, location.href.lastIndexOf('/') + 1);
   stage.innerHTML = `
     <div class="card" style="margin-bottom:16px;display:flex;gap:24px;align-items:center;flex-wrap:wrap">
-      <div id="qr-box" style="background:#fff;padding:12px;border-radius:14px;line-height:0;flex:none"></div>
+      <div id="qr-box" title="클릭하면 전체 화면으로 크게 보기" style="background:#fff;padding:12px;border-radius:14px;line-height:0;flex:none;cursor:pointer"></div>
       <div style="flex:1;min-width:240px">
         <h3 style="margin-bottom:8px">📱 플레이어 접속</h3>
-        <div class="muted" style="margin-bottom:10px">폰 카메라로 QR을 찍으면 입장 화면으로 이동합니다</div>
+        <div class="muted" style="margin-bottom:10px">폰 카메라로 QR을 찍으면 입장 화면으로 이동합니다 · <b>QR을 클릭하면 화면 가득 크게</b></div>
         <div style="font-size:20px;font-weight:800;color:var(--accent);word-break:break-all">${esc(playerURL)}</div>
       </div>
     </div>
@@ -201,11 +201,26 @@ function rLobby() {
         colorLight: '#ffffff',
         correctLevel: QRCode.CorrectLevel.M
       });
+      qbox.onclick = () => showBigQR(playerURL);
     } else {
       qbox.innerHTML = '<div style="width:180px;height:180px;display:flex;align-items:center;justify-content:center;color:#888;font-size:13px;text-align:center">QR 라이브러리를<br>불러오지 못했습니다<br>(위 주소를 직접 입력)</div>';
     }
   }
 }
+
+// QR을 화면 가득 크게 (TV에서 멀리서도 스캔). 화면 아무 곳이나 누르면 닫힘.
+window.showBigQR = url => {
+  const size = Math.max(240, Math.min(window.innerWidth, window.innerHeight) - 120);
+  overlay(`<div style="background:#fff;padding:28px;border-radius:24px;line-height:0" id="qr-big"></div>
+    <div style="color:#fff;font-size:26px;font-weight:800;word-break:break-all;text-align:center">${esc(url)}</div>
+    <div class="muted">화면을 누르면 닫힙니다</div>`);
+  const box = document.getElementById('qr-big');
+  if (window.QRCode && box) {
+    new QRCode(box, { text: url, width: size, height: size, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  }
+  const o = $('#overlay');
+  o.onclick = () => { hideOverlay(); o.onclick = null; };
+};
 
 async function makeTeams() {
   const n = Math.max(2, Math.min(8, +$('#team-n').value || 2));

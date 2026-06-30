@@ -137,8 +137,7 @@ body.player #app {
 }
 /* 색상 수사대 원형 라이브 카메라 */
 .cam-circle {
-  width: 260px; height: 260px;
-  max-width: 80vw; aspect-ratio: 1 / 1;
+  width: min(280px, 80vw); height: min(280px, 80vw);  /* 항상 정사각 → 완전한 원 */
   border-radius: 50%;
   overflow: hidden;
   position: relative;
@@ -147,17 +146,16 @@ body.player #app {
   box-shadow: 0 8px 40px rgba(0,0,0,.55);
 }
 .cam-circle video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.cam-reticle {
+/* 실제로 캡처/색상판별되는 조준 원 (지름 = 뷰포트의 50%). 바깥은 어둡게 가림 */
+.cam-aim {
   position: absolute; left: 50%; top: 50%;
-  width: 54px; height: 54px;
+  width: 50%; height: 50%;
   transform: translate(-50%, -50%);
-  border: 2px solid rgba(255,255,255,.85);
   border-radius: 50%;
+  border: 3px dashed rgba(255,255,255,.95);
+  box-shadow: 0 0 0 999px rgba(0,0,0,.5);  /* 조준 원 바깥을 어둡게 → "이 원만 측정" 표시 */
   pointer-events: none;
 }
-.cam-reticle::before, .cam-reticle::after { content: ''; position: absolute; background: rgba(255,255,255,.85); }
-.cam-reticle::before { left: 50%; top: -10px; width: 2px; height: 12px; transform: translateX(-50%); }
-.cam-reticle::after  { top: 50%; left: -10px; height: 2px; width: 12px; transform: translateY(-50%); }
 .cam-btn {
   display: inline-flex;
   align-items: center;
