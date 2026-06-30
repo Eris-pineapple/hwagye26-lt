@@ -131,7 +131,17 @@ function renderScoreboard() {
 /* ---------------- 로비: 팀 구성 / 플레이어 관리 ---------------- */
 function rLobby() {
   const ids = teamIds();
+  const playerURL = location.href.substring(0, location.href.lastIndexOf('/') + 1);
   stage.innerHTML = `
+    <div class="card" style="margin-bottom:16px;display:flex;gap:24px;align-items:center;flex-wrap:wrap">
+      <div id="qr-box" style="background:#fff;padding:12px;border-radius:14px;line-height:0;flex:none"></div>
+      <div style="flex:1;min-width:240px">
+        <h3 style="margin-bottom:8px">📱 플레이어 접속</h3>
+        <div class="muted" style="margin-bottom:10px">폰 카메라로 QR을 찍으면 입장 화면으로 이동합니다</div>
+        <div style="font-size:20px;font-weight:800;color:var(--accent);word-break:break-all">${esc(playerURL)}</div>
+      </div>
+    </div>
+
     <div class="card" style="margin-bottom:16px">
       <h3 style="margin-bottom:10px">🎽 팀 구성</h3>
       <div style="display:flex;gap:10px;align-items:center">
@@ -177,6 +187,24 @@ function rLobby() {
       </div>
     </div>`;
   $('#team-make').onclick = makeTeams;
+
+  // 플레이어 접속 QR (qrcode.js). innerHTML 재생성마다 새로 그림
+  const qbox = $('#qr-box');
+  if (qbox) {
+    if (window.QRCode) {
+      qbox.innerHTML = '';
+      new QRCode(qbox, {
+        text: playerURL,
+        width: 180,
+        height: 180,
+        colorDark: '#1a1040',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    } else {
+      qbox.innerHTML = '<div style="width:180px;height:180px;display:flex;align-items:center;justify-content:center;color:#888;font-size:13px;text-align:center">QR 라이브러리를<br>불러오지 못했습니다<br>(위 주소를 직접 입력)</div>';
+    }
+  }
 }
 
 async function makeTeams() {
