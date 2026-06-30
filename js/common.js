@@ -148,9 +148,13 @@ function setVoice(on) {
   if (!on) try { speechSynthesis.cancel(); } catch (e) {}
 }
 
+// Web Speech 사용 여부. false 면 say()는 아무 것도 하지 않는다(완전 비활성화).
+// → 즉각 반응 음성도, Gemini 실패 시 폴백도 Web Speech를 쓰지 않음.
+const USE_WEB_SPEECH = false;
+
 // 즉각 반응용 (지연 없음)
 function say(text, rate = 1.05) {
-  if (!voiceOn) return;
+  if (!USE_WEB_SPEECH || !voiceOn) return;
   try {
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'ko-KR';
@@ -159,9 +163,10 @@ function say(text, rate = 1.05) {
   } catch (e) {}
 }
 
-// Gemini TTS 사용 여부. Web Speech와 동시 재생되는 문제로 현재 비활성화 (Web Speech만 사용).
-// true 로 바꾸면 다시 Gemini TTS를 사용한다.
-const USE_GEMINI_TTS = false;
+// Gemini TTS 사용 여부. 임팩트 음성(결과 발표·시상 등)은 Gemini TTS로 재생한다.
+// 동시 재생 방지를 위해 Gemini 오디오 재생 직전 Web Speech를 중단한다(makeAudioPlayer 참고).
+// false 로 바꾸면 Web Speech만 사용한다.
+const USE_GEMINI_TTS = true;
 
 // 임팩트용 — 미리 생성해두고 재생 함수를 돌려줌 (두구두구 연출 중 생성)
 // 사용법: const play = await ttsMake('레드팀 547점!'); ... play();
@@ -215,6 +220,7 @@ async function ttsMake(text, style) {
 function makeAudioPlayer(src, fallbackText) {
   return () => {
     if (!voiceOn) return;
+    try { speechSynthesis.cancel(); } catch (e) {} // 재생 중인 Web Speech 중단 → Gemini와 동시 재생 방지
     const a = new Audio(src);
     a.play().catch(() => say(fallbackText));
   };
